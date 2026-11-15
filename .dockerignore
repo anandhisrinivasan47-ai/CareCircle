@@ -1,0 +1,23 @@
+# Keep the build context small and secret-free.
+
+# Installed locally; the image runs npm ci itself.
+node_modules
+
+# Local build output; the image builds a fresh dist from source.
+dist
+
+# Version control and editor metadata are not needed to build.
+.git
+.gitignore
+.vscode
+.idea
+
+# Local environment files may contain secrets.
+.env
+.env.*
+
+# Logs and the deployment files themselves.
+*.log
+Dockerfile
+.dockerignore
+README.md
