@@ -10,6 +10,7 @@ import {
   upsertDoseRecord,
   type AdherenceSummary,
   type DoseRecord,
+  type DoseStatus,
 } from './data/doseHistory'
 import { getRole, type RoleId } from './data/roles'
 
@@ -160,6 +161,22 @@ function App() {
     (m) => hasScheduledTime(m.time) && m.status !== 'taken',
   ).length
 
+  // Writes the timestamped dose record the adherence report is calculated from.
+  const recordDose = (medicine: Medicine, status: DoseStatus) => {
+    const now = new Date()
+
+    setDoseLog((current) =>
+      upsertDoseRecord(current, {
+        date: toDateKey(now),
+        medicine: medicine.name,
+        dose: medicine.dose,
+        scheduledTime: medicine.time,
+        status,
+        recordedAt: now.toISOString(),
+      }),
+    )
+  }
+
   const markAsTaken = (name: string) => {
     const medicine = medicines.find((m) => m.name === name)
 
@@ -167,18 +184,7 @@ function App() {
       current.map((m) => (m.name === name ? { ...m, status: 'taken' } : m)),
     )
 
-    if (medicine) {
-      setDoseLog((current) =>
-        upsertDoseRecord(current, {
-          date: toDateKey(new Date()),
-          medicine: medicine.name,
-          dose: medicine.dose,
-          scheduledTime: medicine.time,
-          status: 'taken',
-          recordedAt: new Date().toISOString(),
-        }),
-      )
-    }
+    if (medicine) recordDose(medicine, 'taken')
 
     setMessage(`${name} marked as taken. Demo adherence record updated.`)
   }
@@ -197,18 +203,7 @@ function App() {
         ),
       )
 
-      if (medicine) {
-        setDoseLog((current) =>
-          upsertDoseRecord(current, {
-            date: toDateKey(new Date()),
-            medicine: medicine.name,
-            dose: medicine.dose,
-            scheduledTime: medicine.time,
-            status: 'skipped',
-            recordedAt: new Date().toISOString(),
-          }),
-        )
-      }
+      if (medicine) recordDose(medicine, 'skipped')
 
       setMessage(`${name} marked as skipped in this demo.`)
     }

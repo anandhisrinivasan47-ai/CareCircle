@@ -12,28 +12,60 @@ type Props = {
 
 const panel = 'rounded-2xl bg-white p-5 shadow-sm'
 
-const statusChip: Record<DoseStatus, string> = {
-  taken: 'bg-teal-100 text-teal-900',
-  skipped: 'bg-amber-100 text-amber-900',
-  missed: 'bg-red-100 text-red-800',
+// Everything the screen needs to know about a dose status, in one place.
+const STATUS: Record<
+  DoseStatus,
+  { legend: string; label: string; chip: string; bar: string }
+> = {
+  taken: {
+    legend: 'Taken',
+    label: '✓ Taken',
+    chip: 'bg-teal-100 text-teal-900',
+    bar: 'bg-teal-600',
+  },
+  skipped: {
+    legend: 'Skipped',
+    label: '↷ Skipped',
+    chip: 'bg-amber-100 text-amber-900',
+    bar: 'bg-amber-500',
+  },
+  missed: {
+    legend: 'Missed',
+    label: '✕ Missed',
+    chip: 'bg-red-100 text-red-800',
+    bar: 'bg-red-400',
+  },
 }
 
-const statusLabel: Record<DoseStatus, string> = {
-  taken: '✓ Taken',
-  skipped: '↷ Skipped',
-  missed: '✕ Missed',
-}
+const DOSE_STATUSES: DoseStatus[] = ['taken', 'skipped', 'missed']
 
-const barSegment: Record<DoseStatus, string> = {
-  taken: 'bg-teal-600',
-  skipped: 'bg-amber-500',
-  missed: 'bg-red-400',
-}
-
+// A bar segment's width as a CSS percentage.
 const share = (value: number, total: number): string =>
   total === 0 ? '0%' : `${(value / total) * 100}%`
 
+function StatCard({
+  title,
+  value,
+  detail,
+  tone,
+}: {
+  title: string
+  value: string
+  detail: string
+  tone: string
+}) {
+  return (
+    <div className={panel}>
+      <p className="text-[10px] uppercase text-slate-500">{title}</p>
+      <p className={`mt-2 text-2xl font-bold ${tone}`}>{value}</p>
+      <p className="text-xs text-slate-500">{detail}</p>
+    </div>
+  )
+}
+
 function AdherenceHistoryScreen({ summary, pendingToday }: Props) {
+  const isSingleDose = pendingToday === 1
+
   return (
     <>
       <div className="mb-5">
@@ -55,53 +87,42 @@ function AdherenceHistoryScreen({ summary, pendingToday }: Props) {
       </div>
 
       <section className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <div className={panel}>
-          <p className="text-[10px] uppercase text-slate-500">
-            {summary.days}-Day Adherence
-          </p>
-          <p className="mt-2 text-2xl font-bold text-teal-800">
-            {summary.percent}%
-          </p>
-          <p className="text-xs text-slate-500">{summary.label}</p>
-        </div>
-        <div className={panel}>
-          <p className="text-[10px] uppercase text-slate-500">Taken</p>
-          <p className="mt-2 text-2xl font-bold text-teal-800">
-            {summary.taken}
-          </p>
-          <p className="text-xs text-slate-500">
-            of {summary.total} recorded doses
-          </p>
-        </div>
-        <div className={panel}>
-          <p className="text-[10px] uppercase text-slate-500">Skipped</p>
-          <p className="mt-2 text-2xl font-bold text-amber-800">
-            {summary.skipped}
-          </p>
-          <p className="text-xs text-slate-500">Recorded as skipped</p>
-        </div>
-        <div className={panel}>
-          <p className="text-[10px] uppercase text-slate-500">Missed</p>
-          <p className="mt-2 text-2xl font-bold text-red-700">
-            {summary.missed}
-          </p>
-          <p className="text-xs text-slate-500">No action was recorded</p>
-        </div>
+        <StatCard
+          title={`${summary.days}-Day Adherence`}
+          value={`${summary.percent}%`}
+          detail={summary.label}
+          tone="text-teal-800"
+        />
+        <StatCard
+          title="Taken"
+          value={String(summary.taken)}
+          detail={`of ${summary.total} recorded doses`}
+          tone="text-teal-800"
+        />
+        <StatCard
+          title="Skipped"
+          value={String(summary.skipped)}
+          detail="Recorded as skipped"
+          tone="text-amber-800"
+        />
+        <StatCard
+          title="Missed"
+          value={String(summary.missed)}
+          detail="No action was recorded"
+          tone="text-red-700"
+        />
       </section>
 
       <section className={`${panel} mb-5`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xl font-bold text-[#10276c]">Daily Breakdown</h3>
           <div className="flex flex-wrap gap-3 text-[10px] font-semibold text-slate-600">
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-teal-600" /> Taken
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-amber-500" /> Skipped
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-red-400" /> Missed
-            </span>
+            {DOSE_STATUSES.map((status) => (
+              <span key={status} className="flex items-center gap-1">
+                <span className={`h-2 w-2 rounded-full ${STATUS[status].bar}`} />
+                {STATUS[status].legend}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -117,18 +138,13 @@ function AdherenceHistoryScreen({ summary, pendingToday }: Props) {
                 </span>
               </div>
               <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className={barSegment.taken}
-                  style={{ width: share(day.taken, day.total) }}
-                />
-                <div
-                  className={barSegment.skipped}
-                  style={{ width: share(day.skipped, day.total) }}
-                />
-                <div
-                  className={barSegment.missed}
-                  style={{ width: share(day.missed, day.total) }}
-                />
+                {DOSE_STATUSES.map((status) => (
+                  <div
+                    key={status}
+                    className={STATUS[status].bar}
+                    style={{ width: share(day[status], day.total) }}
+                  />
+                ))}
               </div>
             </div>
           ))}
@@ -176,8 +192,9 @@ function AdherenceHistoryScreen({ summary, pendingToday }: Props) {
           <h3 className="text-xl font-bold text-[#10276c]">Recent Activity</h3>
           <div className="mt-4 space-y-3">
             {summary.recent.map((record) => (
+              // One record per medicine per day, so this key never repeats.
               <div
-                key={`${record.date}-${record.medicine}-${record.status}`}
+                key={`${record.date}-${record.medicine}`}
                 className="rounded-xl bg-[#f6f8ff] p-3"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -188,9 +205,9 @@ function AdherenceHistoryScreen({ summary, pendingToday }: Props) {
                     </span>
                   </p>
                   <span
-                    className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusChip[record.status]}`}
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold ${STATUS[record.status].chip}`}
                   >
-                    {statusLabel[record.status]}
+                    {STATUS[record.status].label}
                   </span>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
@@ -211,10 +228,11 @@ function AdherenceHistoryScreen({ summary, pendingToday }: Props) {
         <h3 className="text-lg font-bold text-[#10276c]">Report Notes</h3>
         <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-600">
           <li>
-            <strong>{pendingToday}</strong> dose
-            {pendingToday === 1 ? '' : 's'} on today’s schedule{' '}
-            {pendingToday === 1 ? 'is' : 'are'} still pending and{' '}
-            {pendingToday === 1 ? 'is' : 'are'} not counted in the percentages.
+            <strong>{pendingToday}</strong>{' '}
+            {isSingleDose
+              ? 'dose on today’s schedule is still pending and is'
+              : 'doses on today’s schedule are still pending and are'}{' '}
+            not counted in the percentages.
           </li>
           <li>
             “Missed” means a scheduled dose reached the end of the demo day with

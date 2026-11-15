@@ -9,34 +9,28 @@ export type DoseRecord = {
   recordedAt: string
 }
 
-export type AdherenceDay = {
+// Counts shared by the whole summary, each day and each medicine.
+type DoseCounts = {
+  taken: number
+  skipped: number
+  missed: number
+  total: number
+  percent: number
+}
+
+export type AdherenceDay = DoseCounts & {
   date: string
   label: string
-  taken: number
-  skipped: number
-  missed: number
-  total: number
-  percent: number
 }
 
-export type AdherenceMedicine = {
+export type AdherenceMedicine = DoseCounts & {
   medicine: string
-  taken: number
-  skipped: number
-  missed: number
-  total: number
-  percent: number
 }
 
-export type AdherenceSummary = {
+export type AdherenceSummary = DoseCounts & {
   days: number
   from: string
   to: string
-  taken: number
-  skipped: number
-  missed: number
-  total: number
-  percent: number
   label: string
   byDay: AdherenceDay[]
   byMedicine: AdherenceMedicine[]
@@ -50,18 +44,21 @@ type SeedMedicine = {
   status: string
 }
 
-// Demo history covers six completed days; today is built from the live schedule.
+const ADHERENCE_WINDOW_DAYS = 7
+
+// Demo history covers six completed days; today comes from the live schedule.
 const SEEDED_DAYS = 6
 
-// Deterministic fictional pattern, one row per past day and one entry per
-// scheduled medicine (30 taken, 2 skipped, 1 missed over six days).
-const SEEDED_STATUSES: DoseStatus[][] = [
-  ['taken', 'taken', 'taken', 'taken', 'taken'],
-  ['taken', 'taken', 'skipped', 'taken', 'taken'],
-  ['taken', 'taken', 'taken', 'taken', 'taken'],
-  ['taken', 'taken', 'taken', 'missed', 'taken'],
-  ['taken', 'taken', 'taken', 'taken', 'taken'],
-  ['taken', 'skipped', 'taken', 'taken', 'taken'],
+// Every scheduled dose in the past six days counts as taken, except these
+// planted exceptions. The names must match the demo medicines in App.tsx.
+const SEEDED_EXCEPTIONS: {
+  daysAgo: number
+  medicine: string
+  status: DoseStatus
+}[] = [
+  { daysAgo: 5, medicine: 'Aspirin Low Dose', status: 'skipped' },
+  { daysAgo: 3, medicine: 'Metformin Hydrochloride', status: 'missed' },
+  { daysAgo: 1, medicine: 'Vitamin D3', status: 'skipped' },
 ]
 
 const MISSED_GRACE_HOURS = 2
@@ -84,12 +81,13 @@ const fromDateKey = (dateKey: string): Date => {
   return new Date(year, month - 1, day)
 }
 
+// Turns "8:05 AM" into 24-hour hours/minutes. Returns null for "As needed".
 const parseClock = (time: string): { hours: number; minutes: number } | null => {
   const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(time.trim())
 
   if (!match) return null
 
-  let hours = Number(match[1]) % 12
+  let hours = Number(match[1]) % 12 // 12 AM becomes 0, 12 PM stays 12
   if (match[3].toUpperCase() === 'PM') hours += 12
 
   return { hours, minutes: Number(match[2]) }
@@ -98,6 +96,8 @@ const parseClock = (time: string): { hours: number; minutes: number } | null => 
 export const hasScheduledTime = (time: string): boolean =>
   parseClock(time) !== null
 
+// Builds a timestamp in local time, so the printed clock time matches the
+// schedule rather than shifting by the machine's UTC offset.
 const combineDateAndTime = (dateKey: string, time: string): string => {
   const clock = parseClock(time)
   const date = fromDateKey(dateKey)
@@ -126,7 +126,7 @@ export const formatShortDate = (dateKey: string): string =>
     day: 'numeric',
   })
 
-const tally = (records: DoseRecord[]) => {
+const countDoses = (records: DoseRecord[]): DoseCounts => {
   const taken = records.filter((record) => record.status === 'taken').length
   const skipped = records.filter((record) => record.status === 'skipped').length
   const missed = records.filter((record) => record.status === 'missed').length
@@ -141,11 +141,34 @@ const tally = (records: DoseRecord[]) => {
   }
 }
 
-export const adherenceLabel = (percent: number, total: number): string => {
-  if (total === 0) return 'No records yet'
+const describeAdherence = (percent: number): string => {
   if (percent >= 90) return 'On track'
   if (percent >= 75) return 'Needs attention'
   return 'Below target'
+}
+
+const buildRecord = (
+  dateKey: string,
+  medicine: SeedMedicine,
+  status: DoseStatus,
+): DoseRecord => {
+  const scheduledIso = combineDateAndTime(dateKey, medicine.time)
+  const recordedAt =
+    status === 'missed'
+      ? new Date(
+          new Date(scheduledIso).getTime() +
+            MISSED_GRACE_HOURS * 60 * 60 * 1000,
+        ).toISOString()
+      : scheduledIso
+
+  return {
+    date: dateKey,
+    medicine: medicine.name,
+    dose: medicine.dose,
+    scheduledTime: medicine.time,
+    status,
+    recordedAt,
+  }
 }
 
 /**
@@ -156,51 +179,33 @@ export function createSeededHistory(
   medicines: SeedMedicine[],
   today = new Date(),
 ): DoseRecord[] {
+  // "As needed" medicines have no scheduled dose, so they cannot be adhered to.
   const scheduled = medicines.filter((medicine) =>
     hasScheduledTime(medicine.time),
   )
   const records: DoseRecord[] = []
 
-  SEEDED_STATUSES.forEach((statuses, index) => {
-    const daysAgo = SEEDED_DAYS - index
+  for (let daysAgo = SEEDED_DAYS; daysAgo >= 1; daysAgo -= 1) {
     const dateKey = toDateKey(addDays(today, -daysAgo))
 
-    scheduled.forEach((medicine, position) => {
-      const status = statuses[position] ?? 'taken'
-      const scheduledIso = combineDateAndTime(dateKey, medicine.time)
-      const recordedAt =
-        status === 'missed'
-          ? new Date(
-              new Date(scheduledIso).getTime() +
-                MISSED_GRACE_HOURS * 60 * 60 * 1000,
-            ).toISOString()
-          : scheduledIso
+    for (const medicine of scheduled) {
+      const exception = SEEDED_EXCEPTIONS.find(
+        (item) => item.daysAgo === daysAgo && item.medicine === medicine.name,
+      )
 
-      records.push({
-        date: dateKey,
-        medicine: medicine.name,
-        dose: medicine.dose,
-        scheduledTime: medicine.time,
-        status,
-        recordedAt,
-      })
-    })
-  })
+      records.push(
+        buildRecord(dateKey, medicine, exception?.status ?? 'taken'),
+      )
+    }
+  }
 
   const todayKey = toDateKey(today)
 
-  scheduled.forEach((medicine) => {
-    if (medicine.status !== 'taken') return
-
-    records.push({
-      date: todayKey,
-      medicine: medicine.name,
-      dose: medicine.dose,
-      scheduledTime: medicine.time,
-      status: 'taken',
-      recordedAt: combineDateAndTime(todayKey, medicine.time),
-    })
-  })
+  for (const medicine of scheduled) {
+    if (medicine.status === 'taken') {
+      records.push(buildRecord(todayKey, medicine, 'taken'))
+    }
+  }
 
   return records
 }
@@ -223,24 +228,24 @@ export function upsertDoseRecord(
 
 export function summarizeAdherence(
   records: DoseRecord[],
-  days = 7,
   today = new Date(),
 ): AdherenceSummary {
   const to = toDateKey(today)
-  const from = toDateKey(addDays(today, -(days - 1)))
+  const from = toDateKey(addDays(today, -(ADHERENCE_WINDOW_DAYS - 1)))
+
+  // Date keys are YYYY-MM-DD, so comparing them as text also compares dates.
   const inWindow = records.filter(
     (record) => record.date >= from && record.date <= to,
   )
 
   const byDay: AdherenceDay[] = []
-  for (let offset = days - 1; offset >= 0; offset -= 1) {
+  for (let offset = ADHERENCE_WINDOW_DAYS - 1; offset >= 0; offset -= 1) {
     const dateKey = toDateKey(addDays(today, -offset))
-    const dayRecords = inWindow.filter((record) => record.date === dateKey)
 
     byDay.push({
       date: dateKey,
       label: formatDayLabel(dateKey),
-      ...tally(dayRecords),
+      ...countDoses(inWindow.filter((record) => record.date === dateKey)),
     })
   }
 
@@ -248,18 +253,21 @@ export function summarizeAdherence(
   const byMedicine: AdherenceMedicine[] = medicineNames
     .map((medicine) => ({
       medicine,
-      ...tally(inWindow.filter((record) => record.medicine === medicine)),
+      ...countDoses(inWindow.filter((record) => record.medicine === medicine)),
     }))
     .sort((a, b) => b.total - a.total || a.medicine.localeCompare(b.medicine))
 
-  const totals = tally(inWindow)
+  const totals = countDoses(inWindow)
 
   return {
-    days,
+    days: ADHERENCE_WINDOW_DAYS,
     from,
     to,
     ...totals,
-    label: adherenceLabel(totals.percent, totals.total),
+    label:
+      totals.total === 0
+        ? 'No records yet'
+        : describeAdherence(totals.percent),
     byDay,
     byMedicine,
     recent: [...inWindow]
