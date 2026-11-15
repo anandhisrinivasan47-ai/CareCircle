@@ -1,6 +1,16 @@
 
 import { useState, type ChangeEvent } from 'react'
+import AdherenceHistoryScreen from './components/AdherenceHistoryScreen'
 import RoleStartScreen from './components/RoleStartScreen'
+import {
+  createSeededHistory,
+  hasScheduledTime,
+  summarizeAdherence,
+  toDateKey,
+  upsertDoseRecord,
+  type AdherenceSummary,
+  type DoseRecord,
+} from './data/doseHistory'
 import { getRole, type RoleId } from './data/roles'
 
 type Status = 'taken' | 'due' | 'upcoming'
@@ -110,6 +120,9 @@ const buttonSoft =
 
 function App() {
   const [medicines, setMedicines] = useState<Medicine[]>(initialMedicines)
+  const [doseLog, setDoseLog] = useState<DoseRecord[]>(() =>
+    createSeededHistory(initialMedicines),
+  )
   const [activePage, setActivePage] = useState("Elderly Person's Dashboard")
   const [fontSize, setFontSize] = useState(14)
   const [message, setMessage] = useState('')
@@ -142,13 +155,32 @@ function App() {
   const takenCount = medicines.filter((m) => m.status === 'taken').length
   const pendingCount = medicines.filter((m) => m.status !== 'taken').length
 
+  const adherence = summarizeAdherence(doseLog)
+  const pendingScheduledToday = medicines.filter(
+    (m) => hasScheduledTime(m.time) && m.status !== 'taken',
+  ).length
+
   const markAsTaken = (name: string) => {
+    const medicine = medicines.find((m) => m.name === name)
+
     setMedicines((current) =>
-      current.map((m) =>
-        m.name === name ? { ...m, status: 'taken' } : m,
-      ),
+      current.map((m) => (m.name === name ? { ...m, status: 'taken' } : m)),
     )
-    setMessage(`${name} marked as taken. Demo record updated on this screen.`)
+
+    if (medicine) {
+      setDoseLog((current) =>
+        upsertDoseRecord(current, {
+          date: toDateKey(new Date()),
+          medicine: medicine.name,
+          dose: medicine.dose,
+          scheduledTime: medicine.time,
+          status: 'taken',
+          recordedAt: new Date().toISOString(),
+        }),
+      )
+    }
+
+    setMessage(`${name} marked as taken. Demo adherence record updated.`)
   }
 
   const skipDose = (name: string) => {
@@ -157,11 +189,27 @@ function App() {
       : true
 
     if (confirmed) {
+      const medicine = medicines.find((m) => m.name === name)
+
       setMedicines((current) =>
         current.map((m) =>
           m.name === name ? { ...m, status: 'upcoming' } : m,
         ),
       )
+
+      if (medicine) {
+        setDoseLog((current) =>
+          upsertDoseRecord(current, {
+            date: toDateKey(new Date()),
+            medicine: medicine.name,
+            dose: medicine.dose,
+            scheduledTime: medicine.time,
+            status: 'skipped',
+            recordedAt: new Date().toISOString(),
+          }),
+        )
+      }
+
       setMessage(`${name} marked as skipped in this demo.`)
     }
   }
@@ -207,7 +255,9 @@ function App() {
   const changePage = (page: string) => {
     setActivePage(page)
     setMessage(
-      page === "Elderly Person's Dashboard" || page === 'Medication Schedule'
+      page === "Elderly Person's Dashboard" ||
+      page === 'Medication Schedule' ||
+      page === 'Adherence History'
         ? ''
         : `${page} is the next screen to be developed.`,
     )
@@ -434,6 +484,7 @@ function App() {
                 `Edit details for ${name}: editing is a demo placeholder.`,
               )
             }
+            adherence={adherence}
             canRecordDoses={role.canRecordDoses}
             canAddMedicine={role.canAddMedicine}
             canEditDetails={role.canEditDetails}
@@ -446,6 +497,7 @@ function App() {
             medicines={medicines}
             takenCount={takenCount}
             pendingCount={pendingCount}
+            adherence={adherence}
             greeting={role.greeting}
             canRecordDoses={role.canRecordDoses}
             readOnlyNote={role.readOnlyNote}
@@ -455,6 +507,11 @@ function App() {
             }
             onRead={readWelcome}
             onPrint={() => browser.print?.()}
+          />
+        ) : activePage === 'Adherence History' ? (
+          <AdherenceHistoryScreen
+            summary={adherence}
+            pendingToday={pendingScheduledToday}
           />
         ) : (
           <section className={`${panel} mt-8`}>
@@ -567,6 +624,7 @@ function Dashboard({
   medicines,
   takenCount,
   pendingCount,
+  adherence,
   greeting,
   canRecordDoses,
   readOnlyNote,
@@ -578,6 +636,7 @@ function Dashboard({
   medicines: Medicine[]
   takenCount: number
   pendingCount: number
+  adherence: AdherenceSummary
   greeting: string
   canRecordDoses: boolean
   readOnlyNote: string
@@ -663,9 +722,9 @@ function Dashboard({
           detail="Remaining doses"
         />
         <Summary
-          title="Adherence Status"
-          value="On Track"
-          detail="Demo status"
+          title="Adherence (7 days)"
+          value={`${adherence.percent}%`}
+          detail={`${adherence.label} · demo records`}
         />
       </section>
 
@@ -779,6 +838,7 @@ function MedicationSchedule({
   setView,
   filter,
   setFilter,
+  adherence,
   canRecordDoses,
   canAddMedicine,
   canEditDetails,
@@ -797,6 +857,7 @@ function MedicationSchedule({
   setView: (v: 'timeline' | 'weekly') => void
   filter: string
   setFilter: (v: string) => void
+  adherence: AdherenceSummary
   canRecordDoses: boolean
   canAddMedicine: boolean
   canEditDetails: boolean
@@ -1211,13 +1272,14 @@ function MedicationSchedule({
               </div>
               <div className="mt-4 rounded-xl bg-[#edf2ff] p-4">
                 <p className="text-[10px] font-bold uppercase">
-                  7-Day Adherence · Sample
+                  7-Day Adherence · Demo Records
                 </p>
                 <p className="mt-1 text-2xl font-bold text-teal-800">
-                  96.4%
+                  {adherence.percent}%
                 </p>
                 <p className="text-xs text-slate-500">
-                  Illustrative demo statistic, not calculated clinical history.
+                  {adherence.taken} of {adherence.total} recorded doses taken ·
+                  calculated from this demo’s own log, not clinical history.
                 </p>
               </div>
             </div>
