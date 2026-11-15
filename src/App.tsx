@@ -1,5 +1,7 @@
 
 import { useState, type ChangeEvent } from 'react'
+import RoleStartScreen from './components/RoleStartScreen'
+import { getRole, type RoleId } from './data/roles'
 
 type Status = 'taken' | 'due' | 'upcoming'
 
@@ -117,6 +119,25 @@ function App() {
   const [newName, setNewName] = useState('')
   const [newDose, setNewDose] = useState('')
   const [newTime, setNewTime] = useState('8:00 AM')
+  const [roleId, setRoleId] = useState<RoleId | null>(null)
+
+  const role = roleId ? getRole(roleId) : null
+
+  const chooseRole = (id: RoleId) => {
+    const nextRole = getRole(id)
+    setRoleId(id)
+    setActivePage(nextRole.defaultPage)
+    setMessage('')
+  }
+
+  if (!role) {
+    return <RoleStartScreen onSelect={chooseRole} />
+  }
+
+  const switchRole = () => {
+    setRoleId(null)
+    setMessage('')
+  }
 
   const takenCount = medicines.filter((m) => m.status === 'taken').length
   const pendingCount = medicines.filter((m) => m.status !== 'taken').length
@@ -149,9 +170,7 @@ function App() {
     if (browser.speechSynthesis && browser.SpeechSynthesisUtterance) {
       browser.speechSynthesis.cancel()
       browser.speechSynthesis.speak(
-        new browser.SpeechSynthesisUtterance(
-          'Good morning Arthur. Welcome to your CareCircle medication dashboard.',
-        ),
+        new browser.SpeechSynthesisUtterance(role.readAloud),
       )
     } else {
       setMessage('Voice reading is not supported in this browser.')
@@ -201,12 +220,16 @@ function App() {
   })
 
   return (
+    // App shell: header + demo strip sit in normal flow at the top, so their
+    // height is never hardcoded — the strip may wrap to any number of lines on
+    // narrow screens and the content below simply starts after it.
     <div
-      className="min-h-screen bg-[#f6f8ff] text-[#10234d]"
+      className="app-shell flex h-dvh flex-col overflow-hidden bg-[#f6f8ff] text-[#10234d]"
       style={{ fontSize: `${fontSize}px` }}
     >
-      {/* HEADER */}
-      <header className="fixed top-0 z-50 flex h-16 w-full items-center justify-between border-b border-blue-100 bg-white px-4 shadow-sm">
+      {/* HEADER + DEMO MODE STRIP */}
+      <div className="z-50 shrink-0">
+      <header className="flex h-16 w-full items-center justify-between border-b border-blue-100 bg-white px-4 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-100 text-2xl text-teal-800">
             ♡
@@ -220,7 +243,7 @@ function App() {
         </div>
 
         <div className="hidden rounded-full bg-blue-50 px-5 py-3 text-xs lg:block">
-          ♧ Active View: <strong>Arthur Morgan (Senior)</strong>
+          ♧ {role.label} view: <strong>{role.person}</strong>
         </div>
 
         <div className="flex items-center gap-2">
@@ -245,13 +268,34 @@ function App() {
             ♧
           </button>
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-100 font-bold text-teal-800">
-            AM
+            {role.initials}
           </div>
         </div>
       </header>
 
+      {/* DEMO MODE STRIP */}
+      <div className="flex w-full flex-wrap items-center justify-between gap-2 border-y border-amber-200 bg-amber-50 px-4 py-2 text-[11px] text-amber-900">
+        <p className="font-semibold">
+          DEMO MODE · Simulated login · Fictional data · No real clinical system
+          connected
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="hidden text-amber-800 sm:inline">
+            {role.label} · {role.person}
+          </span>
+          <button
+            onClick={switchRole}
+            className="rounded-full bg-white px-3 py-1 font-bold text-amber-900 shadow-sm hover:bg-amber-100"
+          >
+            Switch role
+          </button>
+        </div>
+      </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
       {/* SIDEBAR */}
-      <aside className="fixed bottom-0 left-0 top-16 z-40 hidden w-60 flex-col justify-between bg-[#edf2ff] md:flex">
+      <aside className="hidden w-60 shrink-0 overflow-y-auto bg-[#edf2ff] md:flex md:flex-col md:justify-between">
         <div className="p-4">
           <p className="mb-4 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">
             Primary Oversight
@@ -303,8 +347,9 @@ function App() {
         </div>
       </aside>
 
+      <div className="app-scroll min-h-0 flex-1 overflow-y-auto">
       {/* MOBILE NAVIGATION */}
-      <div className="fixed bottom-0 z-50 flex w-full gap-1 overflow-x-auto border-t bg-white p-2 md:hidden">
+      <div className="no-print fixed bottom-0 z-50 flex w-full gap-1 overflow-x-auto border-t bg-white p-2 md:hidden">
         {navigation.map((item) => (
           <button
             key={item.label}
@@ -321,7 +366,7 @@ function App() {
       </div>
 
       {/* MAIN */}
-      <main className="min-h-screen px-4 pb-24 pt-20 md:ml-60 md:px-6 md:pb-10">
+      <main className="px-4 pb-24 pt-4 md:px-6 md:pb-10">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-slate-500">
             <span className="rounded-full bg-teal-100 px-3 py-2 font-semibold text-teal-800">
@@ -389,6 +434,10 @@ function App() {
                 `Edit details for ${name}: editing is a demo placeholder.`,
               )
             }
+            canRecordDoses={role.canRecordDoses}
+            canAddMedicine={role.canAddMedicine}
+            canEditDetails={role.canEditDetails}
+            readOnlyNote={role.readOnlyNote}
             onPrint={() => browser.print?.()}
             onMessage={setMessage}
           />
@@ -397,6 +446,9 @@ function App() {
             medicines={medicines}
             takenCount={takenCount}
             pendingCount={pendingCount}
+            greeting={role.greeting}
+            canRecordDoses={role.canRecordDoses}
+            readOnlyNote={role.readOnlyNote}
             onTake={markAsTaken}
             onSnooze={() =>
               setMessage('Reminder snoozed for 15 minutes (demo only).')
@@ -502,9 +554,11 @@ function App() {
         </div>
       )}
 
-      <footer className="px-4 pb-6 text-center text-xs text-slate-400 md:ml-60">
+      <footer className="px-4 pb-6 text-center text-xs text-slate-400">
         CareCircle · Demonstration application · Fictional patient data
       </footer>
+      </div>
+      </div>
     </div>
   )
 }
@@ -513,6 +567,9 @@ function Dashboard({
   medicines,
   takenCount,
   pendingCount,
+  greeting,
+  canRecordDoses,
+  readOnlyNote,
   onTake,
   onSnooze,
   onRead,
@@ -521,6 +578,9 @@ function Dashboard({
   medicines: Medicine[]
   takenCount: number
   pendingCount: number
+  greeting: string
+  canRecordDoses: boolean
+  readOnlyNote: string
   onTake: (name: string) => void
   onSnooze: () => void
   onRead: () => void
@@ -535,7 +595,7 @@ function Dashboard({
           ☼ Sunday, November 15, 2026
         </p>
         <h2 className="mb-3 text-3xl font-bold text-[#10276c] lg:text-4xl">
-          Good morning, Arthur!
+          {greeting}
         </h2>
         <p className="max-w-2xl text-sm leading-6 text-slate-600">
           You are doing wonderfully today. You have safely taken{' '}
@@ -563,15 +623,26 @@ function Dashboard({
           <p className="mt-2 text-sm text-slate-500">
             {dueMedicine.instruction}
           </p>
-          <button
-            onClick={() => onTake(dueMedicine.name)}
-            className={`${buttonPrimary} mt-4 w-full sm:w-auto`}
-          >
-            ✓ I've Taken This Medicine
-          </button>
-          <button onClick={onSnooze} className={`${buttonSoft} mt-2 sm:ml-2`}>
-            ◷ Snooze 15 Min
-          </button>
+          {canRecordDoses ? (
+            <>
+              <button
+                onClick={() => onTake(dueMedicine.name)}
+                className={`${buttonPrimary} mt-4 w-full sm:w-auto`}
+              >
+                ✓ I've Taken This Medicine
+              </button>
+              <button
+                onClick={onSnooze}
+                className={`${buttonSoft} mt-2 sm:ml-2`}
+              >
+                ◷ Snooze 15 Min
+              </button>
+            </>
+          ) : (
+            <p className="mt-4 inline-block rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+              🔒 {readOnlyNote}
+            </p>
+          )}
         </section>
       )}
 
@@ -708,6 +779,10 @@ function MedicationSchedule({
   setView,
   filter,
   setFilter,
+  canRecordDoses,
+  canAddMedicine,
+  canEditDetails,
+  readOnlyNote,
   onTake,
   onSkip,
   onAdd,
@@ -722,6 +797,10 @@ function MedicationSchedule({
   setView: (v: 'timeline' | 'weekly') => void
   filter: string
   setFilter: (v: string) => void
+  canRecordDoses: boolean
+  canAddMedicine: boolean
+  canEditDetails: boolean
+  readOnlyNote: string
   onTake: (name: string) => void
   onSkip: (name: string) => void
   onAdd: () => void
@@ -755,9 +834,11 @@ function MedicationSchedule({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button onClick={onAdd} className={buttonPrimary}>
-            ⊕ Add New Medicine
-          </button>
+          {canAddMedicine && (
+            <button onClick={onAdd} className={buttonPrimary}>
+              ⊕ Add New Medicine
+            </button>
+          )}
           <button
             onClick={() =>
               onMessage(
@@ -773,6 +854,13 @@ function MedicationSchedule({
           </button>
         </div>
       </div>
+
+      {!canRecordDoses && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-600">
+          🔒 {readOnlyNote} · This demo role can review the record but cannot
+          change it.
+        </div>
+      )}
 
       <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl bg-[#edf2ff] p-3">
         <button
@@ -857,18 +945,22 @@ function MedicationSchedule({
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => onTake(due.name)}
-                className="rounded-xl bg-teal-800 px-4 py-3 text-xs font-bold text-white"
-              >
-                ✓ Take Dose Now
-              </button>
-              <button
-                onClick={() => onSkip(due.name)}
-                className="rounded-xl px-3 py-3 text-xs font-semibold text-slate-600"
-              >
-                Skip
-              </button>
+              {canRecordDoses && (
+                <button
+                  onClick={() => onTake(due.name)}
+                  className="rounded-xl bg-teal-800 px-4 py-3 text-xs font-bold text-white"
+                >
+                  ✓ Take Dose Now
+                </button>
+              )}
+              {canRecordDoses && (
+                <button
+                  onClick={() => onSkip(due.name)}
+                  className="rounded-xl px-3 py-3 text-xs font-semibold text-slate-600"
+                >
+                  Skip
+                </button>
+              )}
             </div>
           </div>
 
@@ -1034,7 +1126,7 @@ function MedicationSchedule({
                             </div>
 
                             <div className="flex flex-wrap gap-2">
-                              {m.status !== 'taken' && (
+                              {canRecordDoses && m.status !== 'taken' && (
                                 <button
                                   onClick={() => onTake(m.name)}
                                   className={buttonPrimary}
@@ -1042,13 +1134,15 @@ function MedicationSchedule({
                                   ✓ Take Dose Now
                                 </button>
                               )}
-                              <button
-                                onClick={() => onEdit(m.name)}
-                                className={buttonSoft}
-                              >
-                                Edit Details
-                              </button>
-                              {m.status !== 'taken' && (
+                              {canEditDetails && (
+                                <button
+                                  onClick={() => onEdit(m.name)}
+                                  className={buttonSoft}
+                                >
+                                  Edit Details
+                                </button>
+                              )}
+                              {canRecordDoses && m.status !== 'taken' && (
                                 <button
                                   onClick={() => onSkip(m.name)}
                                   className="rounded-xl px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"

@@ -21,3 +21,16 @@ body {
 button {
   cursor: pointer;
 }
+
+/* The app shell scrolls internally; let printing show the whole page. */
+@media print {
+  .app-shell,
+  .app-scroll {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
